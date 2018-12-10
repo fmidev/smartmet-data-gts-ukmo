@@ -5,6 +5,8 @@
 # SmartMet Data Ingestion Module for UKMO Global Model
 #
 
+MODEL=ukmo
+
 # Load Configuration 
 if [ -s /smartmet/cnf/data/ukmo.cnf ]; then
     . /smartmet/cnf/data/ukmo.cnf
@@ -76,10 +78,8 @@ echo "Projection: $PROJECTION"
 echo "Temporary directory: $TMP"
 echo "Input directory: $IN"
 echo "Output directory: $OUT"
-echo "Output surface level file: ${OUTNAME}_surface.sqd"
-echo "Output pressure level file: ${OUTNAME}_pressure.sqd"
-echo "Output hybrid level file: ${OUTNAME}_hybrid.sqd"
-
+echo "Output surface level file: $(basename $OUTFILE_SFC)"
+echo "Output pressure level file: $(basename $OUTFILE_PL)"
 
 if [ -z "$DRYRUN" ]; then
     mkdir -p $OUT/{surface,pressure}/querydata
@@ -91,8 +91,32 @@ if [ -n "$DRYRUN" ]; then
     exit
 fi
 
-function log {
+log() {
     echo "$(date -u +%H:%M:%S) $1"
+}
+
+#
+# Distribute files if valid
+# Globals: $TMP
+# Arguments: outputfile with path
+#
+distribute() {
+    local OUTFILE=$1
+    local TMPFILE=$TMP/$(basename $OUTFILE)
+
+    if [ -s $TMPFILE ]; then
+	log "Testing: $(basename $OUTFILE)"
+	if qdstat $TMPFILE; then
+	    log  "Compressing: $(basename $OUTFILE)"
+	    lbzip2 -k $TMPFILE
+	    log "Moving: $(basename $OUTFILE) to $OUTFILE"
+	    mv -f $TMPFILE $OUTFILE
+	    log "Moving: $(basename $OUTFILE).bz2 to $EDITOR/"
+	    mv -f $TMPFILE.bz2 $EDITOR/
+	else
+	    log "File $TMPFILE is not valid qd file."
+	fi
+    fi
 }
 
 #
@@ -100,7 +124,7 @@ function log {
 #
 if [ ! -s $OUTFILE_SFC ]; then
     # Convert
-    log "Converting surface grib files to qd files.."
+    log "Converting surface grib files to $(basename $OUTFILE_SFC)"
     gribtoqd -d -t -L 1 \
 	-p "120,UKMO Surface" $PROJECTION \
 	-o $TMP/$(basename $OUTFILE_SFC) \
@@ -118,20 +142,8 @@ if [ ! -s $OUTFILE_SFC ]; then
 	qdversionchange -a -g 417 -i $TMP/$(basename $OUTFILE_SFC).tmp 7 > $TMP/$(basename $OUTFILE_SFC)
     fi
 
-    # Distribute
-    if [ -s $TMP/$(basename $OUTFILE_SFC) ]; then
-	log "Testing: $(basename $OUTFILE_SFC)"
-	if qdstat $TMP/$(basename $OUTFILE_SFC); then
-	    log "Compressing: $(basename $OUTFILE_SFC)"
-	    lbzip2 -k $TMP/$(basename $OUTFILE_SFC)
-	    log "Moving: $(basename $OUTFILE_SFC) to $OUT/surface/querydata/"
-	    mv -f $TMP/$(basename $OUTFILE_SFC) $OUT/surface/querydata/
-	    log "Moving $(basename $OUTFILE_SFC).bz2 to $EDITOR"
-	    mv -f $TMP/$(basename $OUTFILE_SFC).bz2 $EDITOR/
-	else
-	    log "File $TMP/$(basename $OUTFILE_SFC) is not valid qd file."
-	fi
-    fi
+    distribute $OUTFILE_SFC
+
 fi # surface
 
 #
@@ -156,21 +168,10 @@ if [ ! -s $OUTFILE_PL ]; then
 	qdversionchange -w 0 -i $TMP/$(basename $OUTFILE_PL).tmp 7 > $TMP/$(basename $OUTFILE_PL)
     fi
 
-    # Distribute
-    if [ -s $TMP/$(basename $OUTFILE_PL) ]; then
-	log "Testing: $(basename $OUTFILE_PL)"
-	if qdstat $TMP/$(basename $OUTFILE_PL); then
-	    log  "Compressing: $(basename $OUTFILE_PL)"
-	    lbzip2 -k $TMP/$(basename $OUTFILE_PL)
-	    log "Moving: $(basename $OUTFILE_PL) to $OUT/pressure/querydata/"
-	    mv -f $TMP/$(basename $OUTFILE_PL) $OUT/pressure/querydata/
-	    log "Moving: $(basename $OUTFILE_PL).bz2 to $EDITOR/"
-	    mv -f $TMP/$(basename $OUTFILE_PL).bz2 $EDITOR/
-	else
-	    log "File $TMP/$(basename $OUTFILE_PL) is not valid qd file."
-	fi
-    fi
+    distribute $OUTFILE_PL
+
 fi # pressure
+
 
 log "Cleaning temporary directory $TMP"
 rm -f $TMP/*_ukmo_*

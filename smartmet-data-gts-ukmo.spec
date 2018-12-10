@@ -2,7 +2,7 @@
 
 Name:           smartmet-data-gts-ukmo
 Version:        18.12.10
-Release:        1%{?dist}.fmi
+Release:        2%{?dist}.fmi
 Summary:        SmartMet Data UKMO Global Model from GTS
 Group:          System Environment/Base
 License:        MIT
